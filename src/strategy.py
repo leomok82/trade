@@ -39,7 +39,7 @@ class MovingAverageCrossover(Strategy):
         return 0
 
 class BuyLow(Strategy):
-    def __init__(self, factor: tuple = (3, 2), stop_loss = 3, timeframe_minutes: int = 390,
+    def __init__(self, factor: tuple = (3, 2), stop_loss : float = 3, timeframe_minutes: int = 390,
                  use_regime: bool = True, regime_adjust: bool = True):
         """
         Variance-based strategy that buys on significant price drops and sells on recoveries.

@@ -7,11 +7,14 @@ This is a trading system for me to use personally. it should be modular so I can
 4. PLACEHOLDER CLASSES FOR EASY STRateGy IMPLEMENTATION
 
 
-
-
-FEaturE: Portfolio sizing - Capital allocation is currently maximum capital/ (len(symbols)//2)
+#### Usage
 
 Try:
 ```
 python main.py --mode backtest --days 180
 ```
+
+#### Features required
+FEATURE: Portfolio sizing - Capital allocation is currently maximum capital/ (len(symbols)//2)
+FEATURE: Multithreading - right now regimes is very slow, and it is looping through the entire array * symbols (100k calls per year of backtesting)
+

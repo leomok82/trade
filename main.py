@@ -11,13 +11,13 @@ def run_backtest(symbols, days = 365, use_regime=True):
     print(f"Running backtest for {symbols}...")
     loader = StockClient()
     # view 2024 data for backtest
-    end_date = datetime.now() - timedelta(days=365)
+    end_date = datetime.now() #- timedelta(days=365)
     print(f"Loading data from {end_date.date()} for {days} days...")
     data = loader.get_history(symbols, lookback = days, end = end_date, interval= 'minute')
     print(f"Data Retrieved: {data.shape[0]} bars")
 
     print("Initializing strategy...")
-    strategy = BuyLow(factor=(0.2,0.4), stop_loss = 1, timeframe_minutes = 390*5, use_regime=use_regime, regime_adjust=use_regime)
+    strategy = BuyLow(factor=(0.6,0.6), stop_loss = 0.6, timeframe_minutes = 390*5, use_regime=use_regime, regime_adjust=use_regime) #0.2,0.4,1
     print(f"Strategy Implemented (Regime: {use_regime})")
     
     print("Running backtest engine...")
