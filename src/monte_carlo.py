@@ -1,15 +1,23 @@
 import numpy as np
 import pandas as pd
+from enum import Enum
+
+class RegimeType(Enum):
+    """Market regime types for regime-aware simulations"""
+    LOW_VOL = "low_volatility"
+    NORMAL = "normal"
+    HIGH_VOL = "high_volatility"
 
 class MonteCarloSimulator:
     """
     Monte Carlo simulator for portfolio projections and risk analysis.
     
     Simulates future portfolio paths based on historical returns distribution,
-    and provides statistical analysis and risk metrics.
+    with optional regime-aware modeling for more realistic scenarios.
     """
     
-    def __init__(self, returns, num_simulations=1000, num_days=252, initial_value=1.0):
+    def __init__(self, returns, num_simulations=1000, num_days=252, initial_value=1.0,
+                 regime_aware=True, volatility_data=None):
         """
         Initialize Monte Carlo simulator.
         
@@ -18,6 +26,8 @@ class MonteCarloSimulator:
             num_simulations: Number of simulation paths to generate
             num_days: Number of days to project forward
             initial_value: Starting value for simulations (default 1.0 for normalized returns)
+            regime_aware: Enable regime-based simulation (default: False)
+            volatility_data: pandas Series of historical volatility for regime detection (optional)
         """
         # Input validation
         if not isinstance(returns, (pd.Series, np.ndarray)):
@@ -39,21 +49,74 @@ class MonteCarloSimulator:
         self.num_simulations = int(num_simulations)
         self.num_days = int(num_days)
         self.initial_value = initial_value
+        self.regime_aware = regime_aware
+        self.volatility_data = volatility_data
         
         # Storage for simulation results
         self.simulations = None
         self.final_values = None
         
+        # Regime-specific statistics
+        self.regime_stats = None
+        if regime_aware and volatility_data is not None:
+            self._calculate_regime_stats()
+        
+    def _calculate_regime_stats(self):
+        """Calculate regime-specific return statistics."""
+        if self.volatility_data is None or len(self.volatility_data) != len(self.returns):
+            return
+        
+        # Classify regimes based on volatility percentiles
+        vol_25 = np.percentile(self.volatility_data, 25)
+        vol_75 = np.percentile(self.volatility_data, 75)
+        
+        # Separate returns by regime
+        low_vol_mask = self.volatility_data < vol_25
+        normal_vol_mask = (self.volatility_data >= vol_25) & (self.volatility_data < vol_75)
+        high_vol_mask = self.volatility_data >= vol_75
+        
+        self.regime_stats = {
+            RegimeType.LOW_VOL: {
+                'mean': self.returns[low_vol_mask].mean() if low_vol_mask.sum() > 0 else self.returns.mean(),
+                'std': self.returns[low_vol_mask].std() if low_vol_mask.sum() > 0 else self.returns.std(),
+                'probability': low_vol_mask.sum() / len(self.returns)
+            },
+            RegimeType.NORMAL: {
+                'mean': self.returns[normal_vol_mask].mean() if normal_vol_mask.sum() > 0 else self.returns.mean(),
+                'std': self.returns[normal_vol_mask].std() if normal_vol_mask.sum() > 0 else self.returns.std(),
+                'probability': normal_vol_mask.sum() / len(self.returns)
+            },
+            RegimeType.HIGH_VOL: {
+                'mean': self.returns[high_vol_mask].mean() if high_vol_mask.sum() > 0 else self.returns.mean(),
+                'std': self.returns[high_vol_mask].std() if high_vol_mask.sum() > 0 else self.returns.std(),
+                'probability': high_vol_mask.sum() / len(self.returns)
+            }
+        }
+    
     def run(self):
         """
         Execute Monte Carlo simulation.
         
-        Generates random return paths based on historical mean and standard deviation,
-        then calculates cumulative returns starting from initial_value.
+        Generates random return paths based on historical mean and standard deviation.
+        If regime_aware is enabled, simulates regime transitions and uses regime-specific statistics.
         
         Returns:
             pd.DataFrame: Simulation paths with shape (num_days, num_simulations)
         """
+        if self.regime_aware and self.regime_stats is not None:
+            # Regime-aware simulation
+            self.simulations = self._run_regime_aware()
+        else:
+            # Standard simulation
+            self.simulations = self._run_standard()
+        
+        # Store final values for risk analysis
+        self.final_values = self.simulations[-1, :]
+        
+        return pd.DataFrame(self.simulations)
+    
+    def _run_standard(self):
+        """Standard Monte Carlo simulation without regime awareness."""
         # Calculate statistics from historical returns
         mean = self.returns.mean()
         std = self.returns.std()
@@ -66,12 +129,43 @@ class MonteCarloSimulator:
         cumulative_returns = (1 + random_returns).cumprod(axis=0)
         
         # Scale by initial value
-        self.simulations = cumulative_returns * self.initial_value
+        return cumulative_returns * self.initial_value
+    
+    def _run_regime_aware(self):
+        """Regime-aware Monte Carlo simulation with regime switching."""
+        if self.regime_stats is None:
+            return self._run_standard()
         
-        # Store final values for risk analysis
-        self.final_values = self.simulations[-1, :]
+        simulations = np.zeros((self.num_days, self.num_simulations))
         
-        return pd.DataFrame(self.simulations)
+        # Initialize with starting value
+        simulations[0, :] = self.initial_value
+        
+        # Get regime probabilities for transitions
+        regimes = list(self.regime_stats.keys())
+        regime_probs = [self.regime_stats[r]['probability'] for r in regimes]
+        regime_indices = list(range(len(regimes)))
+        
+        for sim in range(self.num_simulations):
+            current_value = self.initial_value
+            
+            for day in range(self.num_days):
+                # Select regime based on historical probabilities
+                regime_idx = np.random.choice(regime_indices, p=regime_probs)
+                regime = regimes[regime_idx]
+                
+                # Get regime-specific statistics
+                mean = self.regime_stats[regime]['mean']
+                std = self.regime_stats[regime]['std']
+                
+                # Generate return for this day
+                daily_return = np.random.normal(mean, std)
+                
+                # Update value
+                current_value *= (1 + daily_return)
+                simulations[day, sim] = current_value
+        
+        return simulations
     
     def get_percentiles(self, percentiles=[5, 25, 50, 75, 95]):
         """

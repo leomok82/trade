@@ -5,15 +5,25 @@ from src.strategy import *
 from src.engine import BacktestEngine
 from src.monte_carlo import MonteCarloSimulator
 from src.webull_executor import WebullExecutor
+from datetime import datetime, timedelta
 
-def run_backtest(symbols, days = 365):
+def run_backtest(symbols, days = 365, use_regime=True):
     print(f"Running backtest for {symbols}...")
     loader = StockClient()
-    data = loader.get_history(symbols, days, 'minute')
+    # view 2024 data for backtest
+    end_date = datetime.now() - timedelta(days=365)
+    print(f"Loading data from {end_date.date()} for {days} days...")
+    data = loader.get_history(symbols, lookback = days, end = end_date, interval= 'minute')
+    print(f"Data Retrieved: {data.shape[0]} bars")
+
+    print("Initializing strategy...")
+    strategy = BuyLow(factor=(0.2,0.4), stop_loss = 1, timeframe_minutes = 390*5, use_regime=use_regime, regime_adjust=use_regime)
+    print(f"Strategy Implemented (Regime: {use_regime})")
     
-    strategy = BuyLow(factor=(0.03, 0.03))
+    print("Running backtest engine...")
     engine = BacktestEngine(strategy, data, symbols)
     results = engine.run()
+    print(f"Backtest complete: {results.shape[0]} equity points")
 
     
     print("\nPerformance Statistics:")
@@ -24,7 +34,7 @@ def run_backtest(symbols, days = 365):
     print("\nRecent Trades:")
     print(engine.get_trades().tail())
 
-    # Monte Carlo Simulation
+    # Monte Carlo Simulation``
     print("\n" + "="*60)
     print("Monte Carlo Risk Analysis")
     print("="*60)
@@ -81,6 +91,8 @@ def main():
     parser.add_argument('--mode', choices=['backtest', 'live'], help='Mode to run')
     parser.add_argument('--symbols_path', type=str, default='symbols.txt', help='Symbols to trade')
     parser.add_argument('--symbols', type=str, default=None, help='Symbols to trade')
+    parser.add_argument('--days', type=int, default=30, help='Number of days for backtest (default: 30)')
+    parser.add_argument('--regime', action='store_true', help='Enable regime detection (slower but more adaptive)')
     
 
     args = parser.parse_args()
@@ -90,7 +102,7 @@ def main():
         symbols = parse_symbols(args.symbols_path)
     
     if args.mode == 'backtest':
-        run_backtest(symbols)
+        run_backtest(symbols, days=args.days, use_regime=args.regime)
     # elif args.mode == 'live':
     #     run_live(args.symbol)
 

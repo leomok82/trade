@@ -27,11 +27,13 @@ class StockClient:
         self.client = StockHistoricalDataClient(Config.ALPACA_KEY, Config.ALPACA_SECRET)
 
         
-    def get_history(self,symbols, n_days, interval):
+    def get_history(self,symbols, lookback = 365, end : datetime.date = None, interval = 'minute') ->pd.DataFrame:
         """minute level day history for today"""
+        if end is None:
+            end = datetime.today()
 
-        day  = datetime.today()  - timedelta(days=n_days)
-        start, end  = self.US_trading_hours(day)
+        _, end  = self.US_trading_hours(end)
+        start, _ = self.US_trading_hours(end - timedelta(days = lookback))
         interval = interval.lower()
         if interval == 'minute':
             timeframe = TimeFrame.Minute
@@ -42,7 +44,7 @@ class StockClient:
 
         req = StockBarsRequest(symbol_or_symbols=symbols,
                             timeframe=timeframe,
-                              feed=DataFeed.IEX, start = start, end = datetime.now()) 
+                              feed=DataFeed.IEX, start = start, end = end) 
         
         return self.client.get_stock_bars(req).df
 

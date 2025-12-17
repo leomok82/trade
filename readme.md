@@ -5,3 +5,13 @@ This is a trading system for me to use personally. it should be modular so I can
 2. ORDER EXECUTOR WITH WEBULL
 3. BACKTESTING ENGINE INCLUDING MONTE CARLO
 4. PLACEHOLDER CLASSES FOR EASY STRateGy IMPLEMENTATION
+
+
+
+
+FEaturE: Portfolio sizing - Capital allocation is currently maximum capital/ (len(symbols)//2)
+
+Try:
+```
+python main.py --mode backtest --days 180
+```

@@ -65,21 +65,8 @@ class BacktestEngine:
             
             # Execute Trades
             if signal == 1 and self.positions[symbol] == 0: # Buy Signal
-                # Allocate portion of capital? Or all capital?
-                # For multi-symbol, we probably want to allocate a fraction.
-                # For now, let's assume we split capital evenly among symbols or use available cash?
-                # Let's stick to the original logic: buy as much as possible with available cash?
-                # That might deplete cash for other symbols.
-                # Let's use 1/N of initial capital per trade? Or just use current cash?
-                # User's original code used `self.capital // price`.
-                # Let's stick to that but maybe limit it if we want diversification.
-                # Given the user didn't specify position sizing, I'll use available cash / number of symbols?
-                # Or just available cash. Let's use available cash / len(symbols) to be safe?
-                # Or just use all available cash (first come first serve).
-                # Let's use a fixed allocation per trade to allow multiple positions.
-                # Allocation = Initial Capital / len(symbols)
                 
-                allocation = self.initial_capital / len(self.symbols)
+                allocation = self.initial_capital / (len(self.symbols)//2)
                 # But we can only use what we have
                 trade_amt = min(self.capital, allocation)
                 
