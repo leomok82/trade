@@ -1,13 +1,14 @@
 import pandas as pd
 import numpy as np
 from collections import defaultdict
+from .visualizer import StrategyVisualizer
 
 class BacktestEngine:
     """
     Event-driven backtesting engine.
     Iterates through data bars, executes strategy logic, and tracks performance.
     """
-    def __init__(self, strategy, data, symbols, initial_capital=10000):
+    def __init__(self, strategy, data, symbols, initial_capital=10000, enable_visualizer=True):
         self.strategy = strategy
         self.data = data
         self.capital = initial_capital
@@ -17,6 +18,10 @@ class BacktestEngine:
         self.last_prices = defaultdict(float) # {symbol: price}
         self.trades = []
         self.equity_curve = []
+        
+        # Initialize visualizer
+        self.enable_visualizer = enable_visualizer
+        self.visualizer = StrategyVisualizer(symbols, initial_capital) if enable_visualizer else None
     
     def run(self):
         """
@@ -62,6 +67,21 @@ class BacktestEngine:
 
             # Execute strategy on current bar
             signal = self.strategy.on_bar(symbol, row)
+            
+            # Update visualizer before executing trades
+            if self.visualizer:
+                position_value = sum(self.positions[s] * self.last_prices[s] for s in self.positions)
+                current_equity = self.capital + position_value
+                self.visualizer.update(
+                    timestamp=timestamp,
+                    equity=current_equity,
+                    cash=self.capital,
+                    positions=dict(self.positions),
+                    last_prices=dict(self.last_prices),
+                    signal=signal,
+                    symbol=symbol,
+                    price=price
+                )
             
             # Execute Trades
             if signal == 1 and self.positions[symbol] == 0: # Buy Signal

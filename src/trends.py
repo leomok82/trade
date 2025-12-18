@@ -34,7 +34,6 @@ class TrendDetector:
         self.min_bars = lookback
 
         self.current_trend = defaultdict(lambda: TrendDirection.FLAT)
-        self.trend_strength = defaultdict(float)
 
         # optional: store raw stats for debugging
         self.last_lr_slope = defaultdict(float)
@@ -44,7 +43,6 @@ class TrendDetector:
     def calculate(self, symbol: str, price_history: list) -> TrendDirection:
         if len(price_history) < self.min_bars:
             self.current_trend[symbol] = TrendDirection.FLAT
-            self.trend_strength[symbol] = 0.0
             return TrendDirection.FLAT
 
         prices = np.asarray(price_history, dtype=np.float64)
@@ -63,40 +61,16 @@ class TrendDetector:
         # 3) Autocorrelation (returns)
         trend_ac, ac_strength = self._detect_autocorr_trend(returns)
     
-        score = 0.0
-
-        score += self._dir_to_score(trend_lr) * 1.0
-        score += self._dir_to_score(trend_mom) * 1.0
-
-        # Autocorr: if positive and strong -> reinforces direction; if negative -> pushes toward FLAT (mean reversion regime)
-        if trend_ac == TrendDirection.UP:
-            score *= 1.25
-        elif trend_ac == TrendDirection.DOWN:
-            score *= 0.60
-
-        # Final classification
-        if score >= 1.0:
-            trend = TrendDirection.UP
-        elif score <= -1.0:
+        if trend_lr == TrendDirection.DOWN or trend_mom == TrendDirection.DOWN or trend_ac == TrendDirection.DOWN:
             trend = TrendDirection.DOWN
-        else:
-            trend = TrendDirection.FLAT
 
-        # Strength: combine magnitudes (clipped to 0..1)
-        # interpret as "confidence" not probability
-        raw_strength = 0.45 * lr_strength + 0.45 * mom_strength + 0.10 * ac_strength
-        strength = float(np.clip(raw_strength, 0.0, 1.0))
+        else: 
+            trend = TrendDirection.UP
 
         self.current_trend[symbol] = trend
-        self.trend_strength[symbol] = strength
         return trend
 
-    def _dir_to_score(self, d: TrendDirection) -> float:
-        if d == TrendDirection.UP:
-            return 1.0
-        if d == TrendDirection.DOWN:
-            return -1.0
-        return 0.0
+
 
     # -------- 1) Linear regression slope --------
     def _detect_lr_trend(self, prices: np.ndarray):
@@ -182,11 +156,9 @@ class TrendDetector:
     def get_trend(self, symbol: str) -> TrendDirection:
         return self.current_trend[symbol]
 
-    def get_trend_strength(self, symbol: str) -> float:
-        return self.trend_strength[symbol]
+
 
     def get_trend_stats(self, symbol: str) -> dict:
         return {
             "trend": self.current_trend[symbol].value,
-            "strength": self.trend_strength[symbol],
         }
