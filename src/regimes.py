@@ -18,6 +18,8 @@ class RegimeDetector:
     - NORMAL: Between 25th and 75th percentile
     - HIGH: Between 75th and 90th percentile
     - EXTREME: Above 90th percentile
+    
+    Note: This class does NOT store price history. Pass history from strategy.
     """
     
     def __init__(self, lookback_window: int = 390, regime_window: int = 20):
@@ -30,31 +32,28 @@ class RegimeDetector:
         """
         self.lookback_window = lookback_window
         self.regime_window = regime_window
-        self.history = defaultdict(list)
+        # Only store calculation results
         self.current_regime = defaultdict(lambda: VolatilityRegime.NORMAL)
         self.current_volatility = defaultdict(float)
         self.volatility_percentile = defaultdict(float)
         
-    def on_bar(self, symbol: str, bar: dict) -> VolatilityRegime:
+    def calculate(self, symbol: str, price_history: list) -> VolatilityRegime:
         """
-        Process a new bar and update volatility regime.
+        Calculate volatility regime from provided price history.
         
         Args:
             symbol: Trading symbol
-            bar: Dictionary containing at least 'close' price
+            price_history: List of historical prices (from strategy)
             
         Returns:
             Current volatility regime for the symbol
         """
-        # Store price history
-        self.history[symbol].append(bar['close'])
-        
         # Need enough data to calculate volatility
-        if len(self.history[symbol]) < self.regime_window + 1:
+        if len(price_history) < self.regime_window + 1:
             return VolatilityRegime.NORMAL
         
         # Calculate returns for regime window
-        prices = np.array(self.history[symbol][-self.regime_window-1:])
+        prices = np.array(price_history[-self.regime_window-1:])
         returns = np.diff(prices) / prices[:-1]
         
         # Current volatility (annualized standard deviation of returns)
@@ -63,11 +62,11 @@ class RegimeDetector:
         self.current_volatility[symbol] = current_vol
         
         # Need lookback window to establish regime thresholds
-        if len(self.history[symbol]) < self.lookback_window:
+        if len(price_history) < self.lookback_window:
             return VolatilityRegime.NORMAL
         
         # Calculate historical volatility distribution using vectorized operations
-        lookback_prices = np.array(self.history[symbol][-self.lookback_window:])
+        lookback_prices = np.array(price_history[-self.lookback_window:])
         
         # Calculate all returns at once
         all_returns = np.diff(lookback_prices) / lookback_prices[:-1]
@@ -137,74 +136,5 @@ class RegimeDetector:
         }
         return descriptions.get(regime, "Unknown regime")
 
-
-class AdaptiveRegimeDetector(RegimeDetector):
-    """
-    Enhanced regime detector that adapts thresholds based on recent market behavior.
-    Uses exponential moving average of volatility for smoother regime transitions.
-    """
-    
-    def __init__(self, lookback_window: int = 390, regime_window: int = 20, smoothing: float = 0.1):
-        """
-        Initialize adaptive regime detector.
-        
-        Args:
-            lookback_window: Number of bars for historical distribution
-            regime_window: Number of bars for current volatility calculation
-            smoothing: EMA smoothing factor (0-1), lower = more smoothing
-        """
-        super().__init__(lookback_window, regime_window)
-        self.smoothing = smoothing
-        self.ema_volatility = defaultdict(float)
-        
-    def on_bar(self, symbol: str, bar: dict) -> VolatilityRegime:
-        """Process bar with EMA smoothing of volatility."""
-        # Get base regime calculation
-        regime = super().on_bar(symbol, bar)
-        
-        # Apply EMA smoothing to volatility
-        current_vol = self.current_volatility[symbol]
-        if self.ema_volatility[symbol] == 0:
-            self.ema_volatility[symbol] = current_vol
-        else:
-            self.ema_volatility[symbol] = (
-                self.smoothing * current_vol + 
-                (1 - self.smoothing) * self.ema_volatility[symbol]
-            )
-        
-        # Reclassify using smoothed volatility
-        if len(self.history[symbol]) >= self.lookback_window:
-            smoothed_vol = self.ema_volatility[symbol]
-            
-            # Recalculate thresholds using vectorized operations
-            lookback_prices = np.array(self.history[symbol][-self.lookback_window:])
-            all_returns = np.diff(lookback_prices) / lookback_prices[:-1]
-            
-            import pandas as pd
-            returns_series = pd.Series(all_returns)
-            rolling_std = returns_series.rolling(window=self.regime_window).std()
-            historical_vols = rolling_std.dropna().values * np.sqrt(252 * 390)
-            
-            p25 = np.percentile(historical_vols, 25)
-            p75 = np.percentile(historical_vols, 75)
-            p90 = np.percentile(historical_vols, 90)
-            
-            # Classify using smoothed volatility
-            if smoothed_vol < p25:
-                regime = VolatilityRegime.LOW
-            elif smoothed_vol < p75:
-                regime = VolatilityRegime.NORMAL
-            elif smoothed_vol < p90:
-                regime = VolatilityRegime.HIGH
-            else:
-                regime = VolatilityRegime.EXTREME
-            
-            self.current_regime[symbol] = regime
-        
-        return regime
-    
-    def get_smoothed_volatility(self, symbol: str) -> float:
-        """Get EMA-smoothed volatility."""
-        return self.ema_volatility[symbol]
 
 # Made with Bob

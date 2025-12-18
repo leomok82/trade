@@ -18,3 +18,4 @@ python main.py --mode backtest --days 180
 FEATURE: Portfolio sizing - Capital allocation is currently maximum capital/ (len(symbols)//2)
 FEATURE: Multithreading - right now regimes is very slow, and it is looping through the entire array * symbols (100k calls per year of backtesting)
 
+implement trend detection

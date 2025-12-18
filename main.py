@@ -7,7 +7,7 @@ from src.monte_carlo import MonteCarloSimulator
 from src.webull_executor import WebullExecutor
 from datetime import datetime, timedelta
 
-def run_backtest(symbols, days = 365, use_regime=True):
+def run_backtest(symbols, days = 365, use_regime=True, use_trend=True):
     print(f"Running backtest for {symbols}...")
     loader = StockClient()
     # view 2024 data for backtest
@@ -17,8 +17,15 @@ def run_backtest(symbols, days = 365, use_regime=True):
     print(f"Data Retrieved: {data.shape[0]} bars")
 
     print("Initializing strategy...")
-    strategy = BuyLow(factor=(0.6,0.6), stop_loss = 0.6, timeframe_minutes = 390*5, use_regime=use_regime, regime_adjust=use_regime) #0.2,0.4,1
-    print(f"Strategy Implemented (Regime: {use_regime})")
+    strategy = BuyLow(
+        factor=(0.6,0.6),
+        stop_loss = 0.6,
+        timeframe_minutes = 390*5,
+        use_regime=use_regime,
+        regime_adjust=use_regime,
+        use_trend=use_trend,
+    )
+    print(f"Strategy Implemented (Regime: {use_regime}, Trend: {use_trend})")
     
     print("Running backtest engine...")
     engine = BacktestEngine(strategy, data, symbols)
@@ -93,6 +100,7 @@ def main():
     parser.add_argument('--symbols', type=str, default=None, help='Symbols to trade')
     parser.add_argument('--days', type=int, default=30, help='Number of days for backtest (default: 30)')
     parser.add_argument('--regime', action='store_true', help='Enable regime detection (slower but more adaptive)')
+    parser.add_argument('--trend', action='store_true', default=True, help='Enable trend detection (default: True)')
     
 
     args = parser.parse_args()
@@ -102,7 +110,7 @@ def main():
         symbols = parse_symbols(args.symbols_path)
     
     if args.mode == 'backtest':
-        run_backtest(symbols, days=args.days, use_regime=args.regime)
+        run_backtest(symbols, days=args.days, use_regime=args.regime, use_trend=args.trend)
     # elif args.mode == 'live':
     #     run_live(args.symbol)
 
