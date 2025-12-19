@@ -15,29 +15,7 @@ class Strategy(ABC):
         Should return a signal: 1 (buy), -1 (sell), 0 (hold).
         """
         pass
-    
-class MovingAverageCrossover(Strategy):
-    def __init__(self, short_window=50, long_window=200):
-        super().__init__()
-        self.short_window = short_window
-        self.long_window = long_window
-        self.history = defaultdict(list)
 
-    def on_bar(self, symbol, bar):
-        self.history[symbol].append(bar['close'])
-        
-        if len(self.history[symbol]) < self.long_window:
-            return 0
-
-        short_ma = sum(self.history[symbol][-self.short_window:]) / self.short_window
-        long_ma = sum(self.history[symbol][-self.long_window:]) / self.long_window
-
-        if short_ma > long_ma:
-            return 1
-        elif short_ma < long_ma:
-            return -1
-        
-        return 0
 
 class BuyLow(Strategy):
     def __init__(self, factor: tuple = (3, 2), stop_loss : float = 3, timeframe_minutes: int = 390,
@@ -82,6 +60,7 @@ class BuyLow(Strategy):
         self.entry_price = defaultdict(lambda: 1e8)
         self.pos = defaultdict(int)
         self.day_high = defaultdict(float)
+        self.entry_mean = defaultdict(float)
         self.entry_std = defaultdict(float)
         self.stop_loss = stop_loss
         self.timeframe_minutes = timeframe_minutes
@@ -94,8 +73,7 @@ class BuyLow(Strategy):
         
         # Trend detection
         self.use_trend = use_trend
-        self.trend_detector = TrendDetector(lookback = 60) if use_trend else None
-        self.current_trend = defaultdict(lambda: TrendDirection.FLAT)
+        self.trend_detector = TrendDetector(lookback = 300) if use_trend else None
         
         self.cooldown = defaultdict(int)
         self.cooldown_period = 30
@@ -115,15 +93,15 @@ class BuyLow(Strategy):
         # Update trend detector if enabled (pass history, don't let it store)
         if self.use_trend and self.trend_detector:
             trend = self.trend_detector.calculate(symbol, self.history[symbol])
-            self.current_trend[symbol] = trend
         
         # Get price history for the specified timeframe (excluding current)
         lookback_prices = np.array(self.history[symbol][-self.timeframe_minutes-1:-1])
         current_price = self.history[symbol][-1]
         
         # Calculate statistical measures
-        mean_price = np.mean(lookback_prices)
-        std_dev = np.std(lookback_prices)
+        mean_price = self.entry_mean[symbol] if self.entry_mean[symbol] > 0 else np.mean(lookback_prices)
+        
+        std_dev =  self.entry_std[symbol] if self.entry_std[symbol] > 0 else np.std(lookback_prices)
         
         # Avoid division by zero
         if std_dev < 1e-6:
@@ -131,6 +109,7 @@ class BuyLow(Strategy):
         
         # Calculate z-score (how many standard deviations from mean)
         z_score = (current_price - mean_price) / std_dev
+
         
         # Adjust thresholds based on volatility regime
         entry_threshold = self.factor[0]
@@ -158,18 +137,17 @@ class BuyLow(Strategy):
                 stop_loss_threshold *= 1.5
         
         # tick cooldown
-        self.cooldown[symbol] -= 1
+        if self.cooldown[symbol]>0:
+            self.cooldown[symbol] -= 1
 
         # Stop Loss: Exit if price drops stop_loss_threshold std devs below entry
         if self.pos[symbol] == 1:
-            price_change_std = (current_price - self.entry_price[symbol]) / self.entry_std[symbol]
-            
+            price_change_std = (current_price - mean_price) / std_dev
+            self.cooldown[symbol] = self.cooldown_period
+
             if price_change_std < -stop_loss_threshold:  # Dropped too much (stop loss)
                 self.pos[symbol] = 0
                 return -1
-        # Take Profit: Exit if price rises exit_threshold std devs above entry
-        if self.pos[symbol] == 1:
-            price_change_std = (current_price - self.entry_price[symbol]) / self.entry_std[symbol]
             
             if price_change_std > exit_threshold:  # Recovered enough (take profit)
                 self.pos[symbol] = 0
@@ -177,20 +155,18 @@ class BuyLow(Strategy):
 
         # Trend Filter
         if self.use_trend:
-            trend = self.current_trend[symbol]
             if trend == TrendDirection.DOWN:
                 return 0
 
         
         # Entry when z-score < -entry_threshold and trend is favorable
-        if self.pos[symbol] == 0 and z_score < -entry_threshold and self.cooldown[symbol]<=0:
+        if self.pos[symbol] == 0 and z_score < -entry_threshold and self.cooldown[symbol] <= 0:
             self.pos[symbol] = 1
             self.entry_price[symbol] = current_price
-            self.entry_std[symbol] = std_dev  # Store std dev at entry for exit calculations
-            self.cooldown[symbol] = self.cooldown_period
+            self.entry_std[symbol] = np.std(lookback_prices)
+            self.entry_mean[symbol] = np.mean(lookback_prices)
             return 1
         
-        
-
+    
 
         return 0

@@ -18,7 +18,7 @@ def run_backtest(symbols, days = 365, use_regime=True, use_trend=True):
 
     print("Initializing strategy...")
     strategy = BuyLow(
-        factor=(0.6,0.6),
+        factor=(0.2,0.4), #0.2,0.4,0.6
         stop_loss = 0.6,
         timeframe_minutes = 390*5,
         use_regime=use_regime,
