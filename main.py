@@ -22,7 +22,6 @@ def run_backtest(symbols, days = 365, use_regime=True, use_trend=True):
         stop_loss = 0.6,
         timeframe_minutes = 390*5,
         use_regime=use_regime,
-        regime_adjust=use_regime,
         use_trend=use_trend,
     )
     print(f"Strategy Implemented (Regime: {use_regime}, Trend: {use_trend})")

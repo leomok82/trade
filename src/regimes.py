@@ -22,7 +22,7 @@ class RegimeDetector:
     Note: This class does NOT store price history. Pass history from strategy.
     """
     
-    def __init__(self, lookback_window: int = 390, regime_window: int = 20):
+    def __init__(self, lookback_window: int = 390, regime_window: int = 60):
         """
         Initialize regime detector.
         
@@ -32,17 +32,12 @@ class RegimeDetector:
         """
         self.lookback_window = lookback_window
         self.regime_window = regime_window
-        # Only store calculation results
-        self.current_regime = defaultdict(lambda: VolatilityRegime.NORMAL)
-        self.current_volatility = defaultdict(float)
-        self.volatility_percentile = defaultdict(float)
         
-    def calculate(self, symbol: str, price_history: list) -> VolatilityRegime:
+    def calculate(self, price_history: list) -> VolatilityRegime:
         """
         Calculate volatility regime from provided price history.
         
         Args:
-            symbol: Trading symbol
             price_history: List of historical prices (from strategy)
             
         Returns:
@@ -59,7 +54,6 @@ class RegimeDetector:
         # Current volatility (annualized standard deviation of returns)
         # Assuming minute bars: sqrt(252 * 390) to annualize
         current_vol = np.std(returns) * np.sqrt(252 * 390)
-        self.current_volatility[symbol] = current_vol
         
         # Need lookback window to establish regime thresholds
         if len(price_history) < self.lookback_window:
@@ -85,7 +79,6 @@ class RegimeDetector:
         
         # Calculate current percentile
         percentile = (historical_vols < current_vol).sum() / len(historical_vols) * 100
-        self.volatility_percentile[symbol] = percentile
         
         # Classify regime
         if current_vol < p25:
@@ -97,34 +90,10 @@ class RegimeDetector:
         else:
             regime = VolatilityRegime.EXTREME
         
-        self.current_regime[symbol] = regime
         return regime
     
-    def get_regime(self, symbol: str) -> VolatilityRegime:
-        """Get current regime for a symbol."""
-        return self.current_regime[symbol]
-    
-    def get_volatility(self, symbol: str) -> float:
-        """Get current annualized volatility for a symbol."""
-        return self.current_volatility[symbol]
-    
-    def get_percentile(self, symbol: str) -> float:
-        """Get current volatility percentile (0-100) for a symbol."""
-        return self.volatility_percentile[symbol]
-    
-    def get_regime_stats(self, symbol: str) -> dict:
-        """
-        Get comprehensive regime statistics for a symbol.
-        
-        Returns:
-            Dictionary with regime, volatility, and percentile information
-        """
-        return {
-            'regime': self.current_regime[symbol].value,
-            'volatility': self.current_volatility[symbol],
-            'percentile': self.volatility_percentile[symbol],
-            'description': self._get_regime_description(self.current_regime[symbol])
-        }
+
+
     
     def _get_regime_description(self, regime: VolatilityRegime) -> str:
         """Get human-readable description of regime."""

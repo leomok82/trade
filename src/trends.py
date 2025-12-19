@@ -33,17 +33,10 @@ class TrendDetector:
 
         self.min_bars = lookback
 
-        self.current_trend = defaultdict(lambda: TrendDirection.FLAT)
 
-        # optional: store raw stats for debugging
-        self.last_lr_slope = defaultdict(float)
-        self.last_mom = defaultdict(float)
-        self.last_ac = defaultdict(float)
 
-    def calculate(self, symbol: str, price_history: list) -> TrendDirection:
-        if len(price_history) < self.min_bars:
-            self.current_trend[symbol] = TrendDirection.FLAT
-            return TrendDirection.FLAT
+    def calculate(self,  price_history: list) -> TrendDirection:
+
 
         prices = np.asarray(price_history, dtype=np.float64)
         if np.any(prices <= 0):
@@ -67,7 +60,6 @@ class TrendDetector:
         else: 
             trend = TrendDirection.UP
 
-        self.current_trend[symbol] = trend
         return trend
 
 
@@ -82,7 +74,6 @@ class TrendDetector:
         avg_price = float(np.mean(y))
         norm_slope = float(slope / avg_price) if avg_price > 0 else 0.0
 
-        self.last_lr_slope["_"] = norm_slope  # optional; overwritten if you keep symbol here
 
         if norm_slope > self.slope_threshold:
             direction = TrendDirection.UP
