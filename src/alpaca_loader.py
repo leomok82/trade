@@ -11,7 +11,6 @@ from config import Config
 
 from abc import ABC, abstractmethod
 
-
 class DataClient(ABC):
     def __init__(self):
         pass

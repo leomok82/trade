@@ -3,6 +3,7 @@ import numpy as np
 from collections import defaultdict
 from .visualizer import StrategyVisualizer
 from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor
 
 @dataclass
 class LiveState:
@@ -21,7 +22,6 @@ class BacktestEngine:
     Each symbol runs in its own thread, synchronized only when capital changes.
     """
     def __init__(self, strategy, data, symbols, initial_capital=10000, enable_visualizer=True):
-        import threading
         
         self.strategy = strategy
         self.data = data
@@ -31,15 +31,8 @@ class BacktestEngine:
         self.trades = []
         self.equity_curve = []
         
-        # Thread synchronization primitives
-        self.capital_lock = threading.Lock()
-        self.trades_lock = threading.Lock()
-        self.equity_lock = threading.Lock()
-        
-        # Condition variable for capital changes
-        self.capital_changed = threading.Condition(self.capital_lock)
-        self.active_threads = 0
-        self.threads_lock = threading.Lock()
+
+
         
         # Initialize visualizer
         self.enable_visualizer = enable_visualizer
@@ -73,105 +66,108 @@ class BacktestEngine:
         for symbol in symbols:
             symbol_data_dict[symbol] = sorted_data[sorted_data['symbol'] == symbol].copy()
         
-        # Create and start threads
-        threads = []
-        with self.threads_lock:
-            self.active_threads = len(symbols)
-        
-        for symbol in symbols:
-            thread = threading.Thread(
-                target=self._worker,
-                args=(symbol, symbol_data_dict[symbol])
-            )
-            thread.start()
-            threads.append(thread)
-        
-        for thread in threads:
-            thread.join()
-        
-        # Create Equity Curve DataFrame
-        if self.equity_curve:
-            self.equity_df = pd.DataFrame(self.equity_curve).set_index('timestamp')
-            self.equity_df = self.equity_df.groupby(level=0).last()
+        # Run each symbol in its own worker; each worker returns its own trades and equity points
+        all_equity_points = []
+        all_trades = []
+
+        with ThreadPoolExecutor(max_workers=len(symbols)) as executor:
+            futures = []
+            for symbol in symbols:
+                symbol_data = symbol_data_dict[symbol]
+                futures.append(executor.submit(self._worker, symbol, symbol_data))
+
+            # Collect results from workers
+            for future in futures:
+                trades, equity_points = future.result()
+                if trades:
+                    all_trades.extend(trades)
+                if equity_points:
+                    all_equity_points.extend(equity_points)
+
+        # Consolidate equity: sum per timestamp across workers
+        if all_equity_points:
+            equity_df = pd.DataFrame(all_equity_points).set_index('timestamp')
+            # sum equities across workers for same timestamp
+            equity_df = equity_df.groupby(level=0).sum()
+            # store
+            self.equity_df = equity_df.sort_index()
         else:
             self.equity_df = pd.DataFrame()
-        
+
+        # Consolidate and sort trades chronologically
+        self.trades = sorted(all_trades, key=lambda t: t.get('date'))
+
         return self.equity_df
 
     def _worker(self, symbol, symbol_data):
         """
-        Worker function to process all bars for a single symbol.
-        Only synchronizes when capital is being modified (trades).
+        Worker processes all bars for a single symbol and returns its trades and equity points.
+        No shared state is modified.
+        Returns:
+            (trades_list, equity_points_list)
         """
-        state =  LiveState()
+        state = LiveState()
+        trades = []
+        shares = 0
+        equity_points = []
+
+        # allocate capital per worker (split initial capital evenly)
+        per_worker_capital = float(self.initial_capital) / max(1, len(self.symbols))
+        local_capital = per_worker_capital
+
         for timestamp, row in symbol_data.iterrows():
-            # Update last price for mark-to-market
             price = row['close']
-            
-            # Execute strategy on current bar
             signal = self.strategy.on_bar(row, state)
-            
-            
-            # Execute Trades - only lock capital when actually trading
+
             if signal == 1:
-            
-                allocation = self.initial_capital / (len(self.symbols) // 2) if len(self.symbols) > 1 else self.initial_capital
-                
-                # Lock capital for thread-safe access - WAIT HERE if needed
-                with self.capital_lock:
-                    trade_amt = min(self.capital, allocation)
-                    
-                    self.capital -= trade_amt
+                # Buy using available local capital
+                trade_amt = local_capital
+                if trade_amt > 0:
                     shares = trade_amt / price
-                                                
-                    # Record trade
-                    with self.trades_lock:
-                        self.trades.append({
-                            'type': 'buy',
-                            'price': price,
-                            'date': timestamp,
-                            'symbol': symbol,
-                            'shares': shares,
-                            'cost': trade_amt
-                        })
-                    
-            
-            elif signal == -1:  # Sell Signal
+                    local_capital -= trade_amt
 
-                proceeds = state.shares * price
-                
-                # Lock capital for thread-safe access - WAIT HERE if needed
-                with self.capital_lock:
-                    self.capital += proceeds
+                    trades.append({
+                        'type': 'buy',
+                        'price': price,
+                        'date': timestamp,
+                        'symbol': symbol,
+                        'shares': shares,
+                        'cost': trade_amt
+                    })
 
-                    
-                    # Record trade
-                    with self.trades_lock:
-                        self.trades.append({
-                            'type': 'sell',
-                            'price': price,
-                            'date': timestamp,
-                            'symbol': symbol,
-                            'shares': state.shares,
-                            'proceeds': proceeds
-                        })
-                    
-            
-            # Record equity at this timestamp (no lock needed for reading if we're careful)
-            with self.capital_lock:
-                with self.equity_lock:
-                    self.equity_curve.append({'timestamp': timestamp, 'equity': self.capital})
+            elif signal == -1:
+                if shares > 0:
+                    proceeds = shares * price
+                    local_capital += proceeds
+
+                    trades.append({
+                        'type': 'sell',
+                        'price': price,
+                        'date': timestamp,
+                        'symbol': symbol,
+                        'shares': shares,
+                        'proceeds': proceeds
+                    })
+                    shares = 0
+
+            # mark-to-market equity: cash + holdings value
+            equity = local_capital + shares * price
+            equity_points.append({'timestamp': timestamp, 'equity': equity})
+
+        return trades, equity_points
     
-        # Thread finished
-        with self.threads_lock:
-            self.active_threads -= 1
+
 
         
     def get_trades(self):
         """Returns a DataFrame of all executed trades."""
         if not self.trades:
             return pd.DataFrame()
-        return pd.DataFrame(self.trades)
+        df = pd.DataFrame(self.trades)
+        # ensure chronological order
+        if 'date' in df.columns:
+            df = df.sort_values('date').reset_index(drop=True)
+        return df
 
     def get_stats(self):
         """Calculates and returns summary statistics."""
