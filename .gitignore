@@ -6,6 +6,17 @@ __pycache__/
 # C extensions
 *.so
 
+# C#
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+bin/
+obj/
+out/
+Debug/
+
 # Distribution / packaging
 .Python
 build/
