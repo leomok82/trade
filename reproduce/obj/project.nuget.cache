@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "dgSpecHash": "FI4miA8TPss=",
+  "success": true,
+  "projectFilePath": "/Users/leo/Desktop/Code/trade/reproduce/reproduce.csproj",
+  "expectedPackageFiles": [
+    "/Users/leo/.nuget/packages/system.security.cryptography.protecteddata/10.0.1/system.security.cryptography.protecteddata.10.0.1.nupkg.sha512",
+    "/Users/leo/.nuget/packages/system.text.json/10.0.1/system.text.json.10.0.1.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1510",
+      "level": "Warning",
+      "message": "PackageReference System.Text.Json will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary.",
+      "projectPath": "/Users/leo/Desktop/Code/trade/reproduce/reproduce.csproj",
+      "warningLevel": 1,
+      "filePath": "/Users/leo/Desktop/Code/trade/reproduce/reproduce.csproj",
+      "libraryId": "System.Text.Json",
+      "targetGraphs": [
+        "net10.0"
+      ]
+    }
+  ]
+}
