@@ -51,19 +51,53 @@ function StockCard({ id, symbol, initialTimeframe, onRemove, onUpdate, setShowSe
         if (!res.ok) throw new Error(`Failed to fetch ${symbol}`);
 
         const rawData = await res.json();
+        const symbols = symbol.split(',').map(s => s.trim().toUpperCase());
 
-        // Format for Recharts
-        const formatted = rawData.map(item => ({
-          time: new Date(item.time).toLocaleString(), // for debugging
-          displayTime: new Date(item.time).toLocaleString('en-US', {
-            month: 'short', day: 'numeric',
-            hour: timeframe.type === 'minutes' ? '2-digit' : undefined,
-            minute: timeframe.type === 'minutes' ? '2-digit' : undefined,
-          }),
-          price: item.price
-        }));
+        if (symbols.length === 1) {
+          // Single symbol format
+          const formatted = rawData.map(item => ({
+            time: new Date(item.time).toLocaleString(),
+            displayTime: new Date(item.time).toLocaleString('en-US', {
+              month: 'short', day: 'numeric',
+              hour: timeframe.type === 'minutes' ? '2-digit' : undefined,
+              minute: timeframe.type === 'minutes' ? '2-digit' : undefined,
+            }),
+            [symbols[0]]: item.price,
+            price: item.price // for single symbol metrics
+          }));
+          setData(formatted);
+        } else {
+          // Multiple symbols dictionary format
+          // Need to align timestamps. For simplicity, we assume they are roughly aligned or we key by timestamp.
+          const allTimes = new Set();
+          Object.values(rawData).forEach(bars => {
+            bars.forEach(b => allTimes.add(b.time));
+          });
 
-        setData(formatted);
+          const sortedTimes = Array.from(allTimes).sort();
+          const timestampToData = {};
+          sortedTimes.forEach(t => {
+            timestampToData[t] = {
+              time: t,
+              displayTime: new Date(t).toLocaleString('en-US', {
+                month: 'short', day: 'numeric',
+                hour: timeframe.type === 'minutes' ? '2-digit' : undefined,
+                minute: timeframe.type === 'minutes' ? '2-digit' : undefined,
+              })
+            };
+          });
+
+          Object.entries(rawData).forEach(([sym, bars]) => {
+            bars.forEach(b => {
+              if (timestampToData[b.time]) {
+                timestampToData[b.time][sym] = b.price;
+              }
+            });
+          });
+
+          const formatted = Object.values(timestampToData);
+          setData(formatted);
+        }
       } catch (err) {
         if (!err.message.includes("Please enter your API Key")) {
           setError(err.message);
@@ -76,9 +110,13 @@ function StockCard({ id, symbol, initialTimeframe, onRemove, onUpdate, setShowSe
     fetchData();
   }, [symbol, timeframe, setShowSettings, refreshTick]);
 
-  // Derived metrics
-  const currentPrice = data.length > 0 ? data[data.length - 1].price : null;
-  const startPrice = data.length > 0 ? data[0].price : null;
+  // Derived metrics for single symbol
+  const symbols = symbol.split(',').map(s => s.trim().toUpperCase());
+  const isMulti = symbols.length > 1;
+  const mainSym = symbols[0];
+
+  const currentPrice = (data.length > 0 && !isMulti) ? data[data.length - 1][mainSym] : null;
+  const startPrice = (data.length > 0 && !isMulti) ? data[0][mainSym] : null;
   const priceChange = (currentPrice && startPrice) ? (currentPrice - startPrice) : 0;
   const percentChange = (currentPrice && startPrice) ? ((priceChange / startPrice) * 100) : 0;
   const isPositive = priceChange >= 0;
@@ -95,10 +133,10 @@ function StockCard({ id, symbol, initialTimeframe, onRemove, onUpdate, setShowSe
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '15px' }}>
           <h3 style={{ margin: 0, color: '#202124', fontSize: '1.2rem' }}>{symbol}</h3>
-          {!loading && !error && currentPrice && (
+          {!loading && !error && currentPrice != null && !isMulti && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>
-                ${currentPrice.toFixed(2)}
+                ${Number(currentPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
               <div style={{
                 display: 'flex',
@@ -109,7 +147,7 @@ function StockCard({ id, symbol, initialTimeframe, onRemove, onUpdate, setShowSe
               }}>
                 {isPositive ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                 <span style={{ marginLeft: '4px' }}>
-                  {isPositive ? '+' : ''}{percentChange.toFixed(2)}%
+                  {isPositive ? '+' : ''}{(percentChange || 0).toFixed(2)}%
                 </span>
               </div>
             </div>
@@ -166,7 +204,18 @@ function StockCard({ id, symbol, initialTimeframe, onRemove, onUpdate, setShowSe
               <XAxis dataKey="displayTime" tick={{ fill: '#9aa0a6', fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#e0e0e0' }} minTickGap={30} />
               <YAxis domain={['auto', 'auto']} tick={{ fill: '#9aa0a6', fontSize: 11 }} tickLine={false} axisLine={false} />
               <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }} />
-              <Line type="monotone" dataKey="price" stroke={isPositive ? '#0F9D58' : '#DB4437'} strokeWidth={2} dot={false} activeDot={{ r: 6 }} animationDuration={400} />
+              {symbols.map((s, idx) => (
+                <Line
+                  key={s}
+                  type="monotone"
+                  dataKey={s}
+                  stroke={idx === 0 ? (isMulti ? '#4285F4' : (isPositive ? '#0F9D58' : '#DB4437')) : ['#DB4437', '#0F9D58', '#F4B400', '#4285F4'][idx % 4]}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 6 }}
+                  animationDuration={400}
+                />
+              ))}
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -187,6 +236,12 @@ function App() {
   });
 
   const [query, setQuery] = useState('');
+  const [portfolio, setPortfolio] = useState({ netValue: 0, investments: {}, pnlPercent: 0, realizedPnL: 0, currentPrices: {} });
+  const [txSymbol, setTxSymbol] = useState('');
+  const [txQty, setTxQty] = useState('');
+  const [txPrice, setTxPrice] = useState('');
+  const [txBuy, setTxBuy] = useState(true);
+  const [holdingOrder, setHoldingOrder] = useState([]); // Array of symbols for ordering
 
   // Settings state
   const [showSettings, setShowSettings] = useState(false);
@@ -197,22 +252,53 @@ function App() {
     localStorage.setItem('stock_charts', JSON.stringify(charts));
   }, [charts]);
 
+  const fetchPortfolio = useCallback(async () => {
+    try {
+      const res = await fetch('http://localhost:5077/portfolio/pnl');
+      if (res.ok) {
+        const data = await res.json();
+        // Normalize casing if needed
+        const normalized = {
+          netValue: data.netValue ?? 0,
+          investments: data.investments ?? {},
+          pnlPercent: data.pnLPercent ?? data.pnlPercent ?? 0,
+          realizedPnL: data.realizedPnL ?? 0,
+          currentPrices: data.currentPrices ?? {}
+        };
+        setPortfolio(normalized);
+
+        // Update holding order if new symbols appear
+        const symbols = Object.keys(normalized.investments);
+        setHoldingOrder(prev => {
+          const existing = new Set(prev);
+          const newOnes = symbols.filter(s => !existing.has(s));
+          const stillThere = prev.filter(s => normalized.investments[s]);
+          return [...stillThere, ...newOnes];
+        });
+      }
+    } catch (err) {
+      console.error("Failed to fetch portfolio", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPortfolio();
+    const interval = setInterval(fetchPortfolio, 30000); // refresh every 30s
+    return () => clearInterval(interval);
+  }, [fetchPortfolio]);
+
   const addSymbol = (e) => {
     e.preventDefault();
     if (!query.trim()) return;
 
-    // Allow multiple comma-separated
-    const newSyms = query.split(',')
-      .map(s => s.trim().toUpperCase())
-      .filter(s => s);
-
-    const newCharts = newSyms.map(sym => ({
-      id: Date.now() + Math.random().toString(), // simple unique id
+    const sym = query.trim().toUpperCase();
+    const newChart = {
+      id: Date.now() + Math.random().toString(),
       symbol: sym,
-      timeframe: TIME_FRAMES[2] // default 1M
-    }));
+      timeframe: TIME_FRAMES[2]
+    };
 
-    setCharts(prev => [...newCharts, ...prev]); // Add to top
+    setCharts(prev => [newChart, ...prev]);
     setQuery('');
   };
 
@@ -223,6 +309,57 @@ function App() {
   const updateChart = useCallback((id, updates) => {
     setCharts(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
   }, []);
+
+  const submitTransaction = async (e) => {
+    e.preventDefault();
+    if (!txSymbol || !txQty || !txPrice) return;
+
+    const tx = {
+      symbol: txSymbol.toUpperCase(),
+      quantity: parseInt(txQty),
+      transactionPrice: parseFloat(txPrice),
+      transactionDate: new Date().toISOString(),
+      buy: txBuy
+    };
+
+    try {
+      const res = await fetch('http://localhost:5077/portfolio/transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tx)
+      });
+      if (res.ok) {
+        fetchPortfolio();
+        setTxSymbol('');
+        setTxQty('');
+        setTxPrice('');
+      } else {
+        const errText = await res.text();
+        alert(errText);
+      }
+    } catch (err) {
+      alert("Network error submitting transaction");
+    }
+  };
+
+  const resetPortfolio = async () => {
+    if (!window.confirm("Are you sure you want to reset your portfolio?")) return;
+    try {
+      const res = await fetch('http://localhost:5077/portfolio/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (res.ok) {
+        fetchPortfolio();
+      } else {
+        const text = await res.text();
+        alert("Reset failed: " + text);
+      }
+    } catch (err) {
+      alert("Error resetting portfolio");
+    }
+  };
 
   const saveCredentials = async () => {
     if (!apiKey || !apiSecret) {
@@ -256,7 +393,7 @@ function App() {
 
       {/* Sidebar */}
       <div style={{
-        width: '300px',
+        width: '400px',
         backgroundColor: 'white',
         borderRight: '1px solid #dfe1e5',
         padding: '20px',
@@ -266,7 +403,9 @@ function App() {
         top: 0,
         bottom: 0,
         left: 0,
-        zIndex: 10
+        zIndex: 10,
+        overflowX: 'hidden',
+        overflowY: 'auto'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '30px', paddingLeft: '10px' }}>
           <TrendingUp size={28} color="#4285F4" />
@@ -300,10 +439,254 @@ function App() {
           <button type="submit" style={{ display: 'none' }}>Add</button>
         </form>
 
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: '10px' }}>
           <p style={{ fontSize: '0.85rem', color: '#5f6368', paddingLeft: '5px' }}>
-            Enter a symbol above and press Enter to add a chart to the dashboard.
+            Enter symbols to compare performance.
           </p>
+
+          {/* Portfolio Section */}
+          <div style={{ marginTop: '30px', borderTop: '1px solid #dfe1e5', paddingTop: '20px' }}>
+            <h4 style={{ margin: '0 0 15px 5px', fontSize: '0.9rem', color: '#202124' }}>Portfolio Management</h4>
+            <div style={{
+              backgroundColor: '#f8f9fa',
+              padding: '12px',
+              borderRadius: '8px',
+              marginBottom: '15px',
+              fontSize: '0.85rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', alignItems: 'center' }}>
+                <span style={{ color: '#5f6368', fontWeight: '500' }}>Portfolio PnL:</span>
+                <span style={{
+                  fontSize: '1.1rem',
+                  fontWeight: '700',
+                  color: (portfolio.pnlPercent || 0) >= 0 ? '#0F9D58' : '#DB4437',
+                  backgroundColor: (portfolio.pnlPercent || 0) >= 0 ? '#e6f4ea' : '#fce8e6',
+                  padding: '4px 8px',
+                  borderRadius: '4px'
+                }}>
+                  {(portfolio.pnlPercent || 0) >= 0 ? '+' : ''}{(portfolio.pnlPercent || 0).toFixed(2)}%
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', alignItems: 'center' }}>
+                <span style={{ color: '#5f6368', fontWeight: '500' }}>Realized PnL:</span>
+                <span style={{
+                  fontWeight: '600',
+                  color: (portfolio.realizedPnL || 0) >= 0 ? '#0F9D58' : '#DB4437',
+                  fontSize: '0.9rem'
+                }}>
+                  {(portfolio.realizedPnL || 0) >= 0 ? '+' : ''}${(portfolio.realizedPnL || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
+                <button
+                  onClick={fetchPortfolio}
+                  style={{
+                    flex: 1,
+                    padding: '6px',
+                    fontSize: '0.75rem',
+                    borderRadius: '4px',
+                    border: '1px solid #dfe1e5',
+                    backgroundColor: 'white',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}
+                >
+                  <RefreshCcw size={14} /> Refresh
+                </button>
+                <button
+                  onClick={resetPortfolio}
+                  style={{
+                    flex: 1,
+                    padding: '6px',
+                    fontSize: '0.75rem',
+                    borderRadius: '4px',
+                    border: '1px solid #fce8e6',
+                    backgroundColor: '#fff',
+                    color: '#DB4437',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fef7f6'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
+                >
+                  Reset
+                </button>
+              </div>
+
+              <div style={{ marginTop: '20px' }}>
+                <span style={{ color: '#5f6368', display: 'block', marginBottom: '10px', fontSize: '0.85rem', fontWeight: '500' }}>Current Holdings:</span>
+                {holdingOrder.length === 0 ? (
+                  <span style={{ fontStyle: 'italic', color: '#9aa0a6', padding: '10px', display: 'block' }}>No holdings</span>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {holdingOrder.map((sym, index) => {
+                      const inv = portfolio.investments[sym];
+                      if (!inv) return null;
+                      const price = portfolio.currentPrices[sym] || 0;
+                      const pnl = (price - inv.averageCost) * inv.quantity;
+                      const pnlPct = inv.averageCost > 0 ? ((price - inv.averageCost) / inv.averageCost * 100) : 0;
+                      const isHoldingPos = pnl >= 0;
+
+                      return (
+                        <div
+                          key={sym}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('symbol', sym);
+                            e.currentTarget.style.opacity = '0.5';
+                          }}
+                          onDragEnd={(e) => e.currentTarget.style.opacity = '1'}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const draggedSym = e.dataTransfer.getData('symbol');
+                            if (draggedSym === sym) return;
+                            setHoldingOrder(prev => {
+                              const newOrder = [...prev];
+                              const draggedIdx = newOrder.indexOf(draggedSym);
+                              const targetIdx = newOrder.indexOf(sym);
+                              newOrder.splice(draggedIdx, 1);
+                              newOrder.splice(targetIdx, 0, draggedSym);
+                              return newOrder;
+                            });
+                          }}
+                          style={{
+                            backgroundColor: 'white',
+                            border: '1px solid #dfe1e5',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            cursor: 'grab',
+                            transition: 'all 0.2s ease',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.borderColor = '#4285F4';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(66, 133, 244, 0.1)';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.borderColor = '#dfe1e5';
+                            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                            <div>
+                              <div style={{ fontWeight: '700', fontSize: '1rem', color: '#202124' }}>{sym}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#5f6368' }}>{inv.quantity} shares @ ${inv.averageCost.toFixed(2)}</div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{
+                                fontWeight: '700',
+                                color: isHoldingPos ? '#0F9D58' : '#DB4437',
+                                fontSize: '0.9rem'
+                              }}>
+                                {isHoldingPos ? '+' : ''}${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: isHoldingPos ? '#0F9D58' : '#DB4437', opacity: 0.8 }}>
+                                {isHoldingPos ? '+' : ''}{pnlPct.toFixed(2)}%
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '10px', borderTop: '1px solid #f1f3f4', paddingTop: '10px' }}>
+                            <div style={{ flex: 1, fontSize: '0.75rem', color: '#5f6368' }}>
+                              Price: <span style={{ fontWeight: '600', color: '#202124' }}>${price.toFixed(2)}</span>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTxSymbol(sym);
+                                setTxQty(inv.quantity.toString());
+                                setTxPrice(price.toFixed(2));
+                                setTxBuy(false);
+                                // Scroll to form
+                                document.getElementById('tx-form')?.scrollIntoView({ behavior: 'smooth' });
+                              }}
+                              style={{
+                                padding: '4px 12px',
+                                borderRadius: '4px',
+                                border: '1px solid #fce8e6',
+                                backgroundColor: '#fff',
+                                color: '#DB4437',
+                                fontSize: '0.7rem',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                transition: 'all 0.1s'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fce8e6'}
+                              onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff'}
+                            >
+                              Sell All
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <form id="tx-form" onSubmit={submitTransaction} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <input
+                placeholder="Symbol"
+                value={txSymbol}
+                onChange={e => setTxSymbol(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #dfe1e5', fontSize: '0.85rem' }}
+              />
+              <input
+                placeholder="Qty"
+                type="number"
+                value={txQty}
+                onChange={e => setTxQty(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #dfe1e5', fontSize: '0.85rem' }}
+              />
+              <input
+                placeholder="Price"
+                type="number"
+                step="0.01"
+                value={txPrice}
+                onChange={e => setTxPrice(e.target.value)}
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #dfe1e5', fontSize: '0.85rem' }}
+              />
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <button
+                  type="button"
+                  onClick={() => setTxBuy(true)}
+                  style={{
+                    flex: 1, padding: '6px', borderRadius: '4px', cursor: 'pointer',
+                    backgroundColor: txBuy ? '#0F9D58' : '#fff',
+                    color: txBuy ? '#fff' : '#5f6368',
+                    border: '1px solid #dfe1e5',
+                    fontSize: '0.8rem'
+                  }}
+                >Buy</button>
+                <button
+                  type="button"
+                  onClick={() => setTxBuy(false)}
+                  style={{
+                    flex: 1, padding: '6px', borderRadius: '4px', cursor: 'pointer',
+                    backgroundColor: !txBuy ? '#DB4437' : '#fff',
+                    color: !txBuy ? '#fff' : '#5f6368',
+                    border: '1px solid #dfe1e5',
+                    fontSize: '0.8rem'
+                  }}
+                >Sell</button>
+              </div>
+              <button
+                type="submit"
+                style={{
+                  backgroundColor: '#1a73e8', color: '#fff', border: 'none',
+                  padding: '8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '500'
+                }}
+              >Submit Transaction</button>
+            </form>
+          </div>
         </div>
 
         <button
@@ -329,7 +712,7 @@ function App() {
       </div>
 
       {/* Main Content */}
-      <div style={{ flex: 1, padding: '40px', marginLeft: '300px', maxWidth: '1000px' }}>
+      <div style={{ flex: 1, padding: '40px', marginLeft: '400px', maxWidth: 'calc(100% - 400px)' }}>
         {charts.length === 0 ? (
           <div style={{
             height: '70vh',
