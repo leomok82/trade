@@ -114,33 +114,80 @@ static async Task<IResult> GetDailyBars(CredentialProvider provider, string symb
 };
 
 app.MapGet("/bars/minutes/{symbol}", GetMinuteBars);
-static async Task<IResult> GetMinuteBars(CredentialProvider provider, string symbol,int? minutes) 
+static async Task<IResult> GetMinuteBars(CredentialProvider provider, string symbol, int? minutes)
 {
     var dataClient = provider.GetOrCreateClient();
-    if (dataClient == null)
-    {
-        return Results.Unauthorized();
-    }
-    var symbols = symbol.Split(',').Select(s => s.Trim().ToUpper()).ToList();
-    var lookback = minutes ?? 60;
-    var now = DateTime.UtcNow.AddMinutes(-15);
-    var start = now.AddMinutes(-lookback);
+    if (dataClient == null) return Results.Unauthorized();
 
-    if (symbols.Count == 1)
+    var symbols = symbol.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s => s.Trim().ToUpperInvariant())
+                        .ToList();
+
+    var requestedMinutes = minutes ?? 60;
+    var now = DateTime.UtcNow.AddMinutes(-15);
+
+    int takeCount;
+    TimeSpan lookback;
+
+    if (requestedMinutes == 960) // Frontend "1D"
     {
-        var req = new HistoricalBarsRequest(symbols[0], start, now, BarTimeFrame.Minute);
-        var res = await dataClient.ListHistoricalBarsAsync(req);
-        return Results.Ok(res.Items.Select(b => new { Time = b.TimeUtc, Price = b.Close }));
+        takeCount = 960;
+        lookback = TimeSpan.FromDays(7); // Plenty of lookback to cross weekends
+    }
+    else if (requestedMinutes == 4800) // Frontend "1W"
+    {
+        takeCount = 4800;
+        lookback = TimeSpan.FromDays(14); // Plenty of lookback to cross weekends
     }
     else
     {
+        takeCount = requestedMinutes;
+        lookback = TimeSpan.FromMinutes(requestedMinutes * 3);
+    }
+
+    var start = now - lookback;
+    static List<object> MostRecentN(IEnumerable<IBar> bars, int n) =>
+        bars.OrderBy(b => b.TimeUtc)
+            .Select(b => new { Time = b.TimeUtc, Price = b.Close })
+            .TakeLast(n)
+            .Cast<object>()
+            .ToList();
+
+    if (symbols.Count == 1)
+    {
+        var bars = new List<IBar>();
+        var req = new HistoricalBarsRequest(symbols[0], start, now, BarTimeFrame.Minute).WithPageSize(10000);
+        do 
+        {
+            var page = await dataClient.ListHistoricalBarsAsync(req);
+            bars.AddRange(page.Items);
+            req = req.WithPageToken(page.NextPageToken);
+        }
+        while (req.Pagination.Token is not null);
+     
+        return Results.Ok(MostRecentN(bars, takeCount));
+    }
+    else
+    {
+        var all = new Dictionary<string, List<IBar>>(StringComparer.OrdinalIgnoreCase);
         var req = new HistoricalBarsRequest(symbols, start, now, BarTimeFrame.Minute);
-        var res = await dataClient.GetHistoricalBarsAsync(req);
-        var dict = res.Items.ToDictionary(
-            kvp => kvp.Key,
-            kvp => kvp.Value.Select(b => new { Time = b.TimeUtc, Price = b.Close })
-        );
-        return Results.Ok(dict);
+        do 
+        {
+            var res = await dataClient.GetHistoricalBarsAsync(req);
+            foreach (var kvp in res.Items)
+            {
+                if (!all.TryGetValue(kvp.Key, out var bars))
+                {
+                    all[kvp.Key] = bars = new List<IBar>();
+                }
+                bars.AddRange(kvp.Value);
+            }
+            req = req.WithPageToken(res.NextPageToken);
+        }
+        while (req.Pagination.Token is not null);
+       
+
+        return Results.Ok(all);
     }
 };
 

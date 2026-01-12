@@ -9,8 +9,6 @@
 /Users/leo/Desktop/Code/trade/app/obj/Debug/net10.0/app.sourcelink.json
 /Users/leo/Desktop/Code/trade/app/bin/Debug/net10.0/appsettings.Development.json
 /Users/leo/Desktop/Code/trade/app/bin/Debug/net10.0/appsettings.json
-/Users/leo/Desktop/Code/trade/app/bin/Debug/net10.0/client/package-lock.json
-/Users/leo/Desktop/Code/trade/app/bin/Debug/net10.0/client/package.json
 /Users/leo/Desktop/Code/trade/app/bin/Debug/net10.0/app.staticwebassets.runtime.json
 /Users/leo/Desktop/Code/trade/app/bin/Debug/net10.0/app.staticwebassets.endpoints.json
 /Users/leo/Desktop/Code/trade/app/bin/Debug/net10.0/app

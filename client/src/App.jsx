@@ -12,14 +12,14 @@ import {
 import './index.css';
 
 const TIME_FRAMES = [
-  { label: '1D', value: '1D', type: 'minutes', amount: 60 * 24 },
-  { label: '1W', value: '1W', type: 'minutes', amount: 60 * 24 * 7 },
+  { label: '1D', value: '1D', type: 'minutes', amount: 960 },
+  { label: '1W', value: '1W', type: 'minutes', amount: 4800 },
   { label: '1M', value: '1M', type: 'daily', amount: 30 },
   { label: '6M', value: '6M', type: 'daily', amount: 30 * 6 },
   { label: '1Y', value: '1Y', type: 'daily', amount: 365 },
 ];
 
-function StockCard({ id, symbol, initialTimeframe, onRemove, onUpdate, setShowSettings }) {
+function StockCard({ id, symbol, initialTimeframe, onRemove, onUpdate, setShowSettings, globalRefreshTick }) {
   const [timeframe, setTimeframe] = useState(initialTimeframe || TIME_FRAMES[2]);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -58,9 +58,11 @@ function StockCard({ id, symbol, initialTimeframe, onRemove, onUpdate, setShowSe
           const formatted = rawData.map(item => ({
             time: new Date(item.time).toLocaleString(),
             displayTime: new Date(item.time).toLocaleString('en-US', {
+              timeZone: 'America/New_York',
               month: 'short', day: 'numeric',
               hour: timeframe.type === 'minutes' ? '2-digit' : undefined,
               minute: timeframe.type === 'minutes' ? '2-digit' : undefined,
+              hour12: false
             }),
             [symbols[0]]: item.price,
             price: item.price // for single symbol metrics
@@ -80,9 +82,11 @@ function StockCard({ id, symbol, initialTimeframe, onRemove, onUpdate, setShowSe
             timestampToData[t] = {
               time: t,
               displayTime: new Date(t).toLocaleString('en-US', {
+                timeZone: 'America/New_York',
                 month: 'short', day: 'numeric',
                 hour: timeframe.type === 'minutes' ? '2-digit' : undefined,
                 minute: timeframe.type === 'minutes' ? '2-digit' : undefined,
+                hour12: false
               })
             };
           });
@@ -108,7 +112,7 @@ function StockCard({ id, symbol, initialTimeframe, onRemove, onUpdate, setShowSe
     };
 
     fetchData();
-  }, [symbol, timeframe, setShowSettings, refreshTick]);
+  }, [symbol, timeframe, setShowSettings, refreshTick, globalRefreshTick]);
 
   // Derived metrics for single symbol
   const symbols = symbol.split(',').map(s => s.trim().toUpperCase());
@@ -247,6 +251,8 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
+  const [globalRefreshTick, setGlobalRefreshTick] = useState(0);
+  const [showResetModal, setShowResetModal] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('stock_charts', JSON.stringify(charts));
@@ -343,7 +349,7 @@ function App() {
   };
 
   const resetPortfolio = async () => {
-    if (!window.confirm("Are you sure you want to reset your portfolio?")) return;
+    setShowResetModal(false);
     try {
       const res = await fetch('http://localhost:5077/portfolio/reset', {
         method: 'POST',
@@ -481,7 +487,10 @@ function App() {
 
               <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
                 <button
-                  onClick={fetchPortfolio}
+                  onClick={() => {
+                    fetchPortfolio();
+                    setGlobalRefreshTick(prev => prev + 1);
+                  }}
                   style={{
                     flex: 1,
                     padding: '6px',
@@ -501,7 +510,7 @@ function App() {
                   <RefreshCcw size={14} /> Refresh
                 </button>
                 <button
-                  onClick={resetPortfolio}
+                  onClick={() => setShowResetModal(true)}
                   style={{
                     flex: 1,
                     padding: '6px',
@@ -735,6 +744,7 @@ function App() {
                 onRemove={removeChart}
                 onUpdate={updateChart}
                 setShowSettings={setShowSettings}
+                globalRefreshTick={globalRefreshTick}
               />
             ))}
           </div>
@@ -840,6 +850,69 @@ function App() {
               Credentials are stored securely on your machine.
             </p>
 
+          </div>
+        </div>
+      )}
+
+      {/* Reset Confirmation Modal */}
+      {showResetModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.4)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1001
+        }} onClick={() => setShowResetModal(false)}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '400px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+            position: 'relative',
+            textAlign: 'center'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ marginBottom: '20px' }}>
+              <TrendingDown size={48} color="#DB4437" style={{ marginBottom: '15px' }} />
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '1.25rem', color: '#202124' }}>Reset Portfolio?</h3>
+              <p style={{ color: '#5f6368', fontSize: '0.9rem', lineHeight: '1.5' }}>
+                This will permanently clear all your current holdings and realized PnL. This action cannot be undone.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setShowResetModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '6px',
+                  border: '1px solid #dfe1e5',
+                  backgroundColor: 'white',
+                  color: '#5f6368',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >Cancel</button>
+              <button
+                onClick={resetPortfolio}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#DB4437',
+                  color: 'white',
+                  fontWeight: '500',
+                  cursor: 'pointer'
+                }}
+              >Reset Everything</button>
+            </div>
           </div>
         </div>
       )}
