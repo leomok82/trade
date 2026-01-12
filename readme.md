@@ -9,4 +9,8 @@ Small cap still has a lot of institutional investors, no edge
 
 
 
-also try factor tilt and quant screen
+also try factor tilt and quant screen.
+
+
+#### Backtesting
+not really possible to backtest, we can see what people on reddit/online said about previous ones and see 1 year return
