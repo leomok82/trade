@@ -11,6 +11,13 @@ look at P/E, EBITDA, financial statements, debt
 look at twitter, reddit etc.
 look at whether the company is startup or trending up/down
 
+## TO DO
+- compute metrics (P/E, EBITDA)
+- create market analysis tool, including stationarity, min value. create agent that compares market vs financials
+- create news getter
+- create financial report getter
+- create social media getter
+- create final decider
 
 also try factor tilt and quant screen.
 
