@@ -13,14 +13,27 @@ look at whether the company is startup or trending up/down
 
 ## TO DO
 - compute metrics (P/E, EBITDA)
-- create market analysis tool, including stationarity, min value. create agent that compares market vs financials
-- create news getter
+STAGE 1:
+- create market analysis tool, including stationarity, volume, trend, anomaly detection. create agent that compares market vs financials
 - create financial report getter
-- create social media getter
-- create final decider
+- valuation framing (mapping type of business - cash burning/asset heavy/ profitable/ growing but unprofitable)
+- create search for insider trades
+
+STAGE 2:
+- event mapper - map whether past events affected this stock
+- create social media getter (reddit, X)
+- create news getter (including reuters, fninhub)
+- industry news getter -> RAG? 
 
 also try factor tilt and quant screen.
 
+### IBANK FLOW (FROMT OPENAI)
+→ Investability screening
+→ Economic relevance screening
+→ Valuation framing
+→ Risk & scenario analysis
+→ Portfolio construction
+→ Ongoing monitoring
 
 #### Backtesting
 not really possible to backtest, but we can get historical market cap data, historical news and check
