@@ -7,10 +7,13 @@ Small cap still has a lot of institutional investors, no edge
 2) Use Alpaca to loosely filter by price and daily volume (USD1-20, $300k to $20M)
 3) Use yfinance to retrieve market cap. per definition, it should be under $300M market cap
 
+look at P/E, EBITDA, financial statements, debt
+look at twitter, reddit etc.
+look at whether the company is startup or trending up/down
 
 
 also try factor tilt and quant screen.
 
 
 #### Backtesting
-not really possible to backtest, we can see what people on reddit/online said about previous ones and see 1 year return
+not really possible to backtest, but we can get historical market cap data, historical news and check

@@ -1,4 +1,4 @@
-# Stock Trader App
+# Stock Visualization App
 
 A simple stock trading/demo app with an ASP.NET Core (C#) backend and a React frontend.
 
@@ -32,17 +32,16 @@ Backend
 ```
 cd src/Server
 dotnet restore
-dotnet run --urls http://localhost:5000
+dotnet run --urls http://localhost:5077
 ```
 
 Frontend
 ```
 cd src/Client
 npm install
-npm start   # opens http://localhost:3000
+npm start   # opens http://localhost:5173
 ```
 
-Configure the client API base URL if needed (e.g., REACT_APP_API_URL=http://localhost:5000).
 
 ## Environment / config
 - SERVER_PORT (backend port)
