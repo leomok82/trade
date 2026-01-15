@@ -13,6 +13,7 @@ look at whether the company is startup or trending up/down
 
 ## TO DO
 - compute metrics (P/E, EBITDA)
+
 STAGE 1:
 - create market analysis tool, including stationarity, volume, trend, anomaly detection. create agent that compares market vs financials
 - create financial report getter
