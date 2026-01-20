@@ -13,7 +13,15 @@ look at twitter, reddit etc.
 look at whether the company is startup or trending up/down
 
 ## TO DO
-- compute metrics (P/E, EBITDA)
+- compute metrics (P/E, EBITDA). use AI agent to scrape, then retrieve market cap (or price) to actually compute the metrics
+
+#### Agents List
+- Footnotes extraction agent
+- Insider trading (form4) labelling
+- News classification (by industry)
+- News Summary Agent
+- Social Media Agent
+- Risk management agent
 
 ### STAGE 0 - Initial Filter
 - Filter by Alpaca Volume and price
@@ -48,6 +56,8 @@ Outputs:
 - Entry price, Position sizing and stop loss setting for portfolio construction. 
 
 #### note: **table industry** should only focus on large industry moves. small specific news will be retrieved elsewehre.
+
+
 
 also try factor tilt and quant screen.
 

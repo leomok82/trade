@@ -1,196 +1,121 @@
+from math import floor
 import requests
 import pandas as pd
 import numpy as np
 
 class Fundamentals:
+    # Define Tag Prioritization
+    TAG_MAP = {
+        "revenue": [
+            "Revenues", 
+            "SalesRevenueNet", 
+            "SalesRevenueGoodsNet", 
+            "RevenueFromContractWithCustomerExcludingAssessedTax",
+            "TotalRevenuesAndOtherIncome",
+            "OperatingRevenueRevenue",
+            "HealthCareOrganizationRevenue",
+            "InterestAndDividendIncomeOperating", # For Banks
+            "RealEstateRevenueNet",                # For REITs
+            "RevenueFromContractWithCustomerIncludingAssessedTax"
+        ],
+        "net_income": ["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic","ProfitLoss","NetIncomeLossAvailableToCommonStockholdersDiluted"],
+        "ebit": ["OperatingIncomeLoss", "IncomeLossFromOperationsBeforeIncomeTaxExpenseBenefit","OperatingProfitLoss"],
+        "cash": ["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"],
+        "assets": ["Assets"],
+        "liabilities": ["Liabilities","LiabilitiesCurrent","LiabilitiesAndStockholdersEquity"],
+        "long_term_debt": ["LongTermDebtNoncurrent", "LongTermDebt"],
+        "operating_cash_flow": ["NetCashProvidedByUsedInOperatingActivities"],
+        "shares": ["EntityCommonStockSharesOutstanding", "WeightedAverageNumberOfSharesOutstandingBasic"],
+        "da": ["DepreciationDepletionAndAmortization", "DepreciationAndAmortization"]
+    }
+
     def __init__(self, tickers: list[str]):
-        self.df = self.get_fundamentals(tickers)
+        self.tickers = [t.upper() for t in tickers]
+        self.df = self.get_fundamentals()
 
-
-
-    def _get_json(self, url: str, headers : dict):
-        r = requests.get(url, headers=headers, timeout = 30)
+    def _get_json(self, url: str):
+        headers = {"User-Agent": "YourName (your@email.com)"}
+        r = requests.get(url, headers=headers)
         r.raise_for_status()
         return r.json()
-    
-    def extract_data(self, data: dict) -> dict:
-        def safe_get(path: list, default=None):
-            cur = data
-            for p in path:
-                if not isinstance(cur, dict) or p not in cur:
-                    return default
-                cur = cur[p]
-            return cur
 
-        assets = []
-        for item in safe_get(['facts','us-gaap','Assets','units','USD'], []):
-            assets.append((item.get('end'), item.get('val')))
-
-        liabilities = []
-        for item in safe_get(['facts','us-gaap','Liabilities','units','USD'], []):
-            liabilities.append((item.get('end'), item.get('val')))
-
-        cash = []
-        for item in safe_get(['facts','us-gaap','CashAndCashEquivalentsAtCarryingValue','units','USD'], []):
-            cash.append((item.get('end'), item.get('val')))
-
-        shares = []
-        for item in safe_get(['facts','dei','EntityCommonStockSharesOutstanding','units','shares'], []):
-            shares.append((item.get('end'), item.get('val')))
-
-        net_income = []
-        for item in safe_get(
-            ['facts','us-gaap','NetIncomeLossAvailableToCommonStockholdersBasic','units','USD'],
-            []
-        ):
-            net_income.append((item.get('end'), item.get('val')))
-
-        revenue = []
-        for item in safe_get(['facts','us-gaap','Revenues','units','USD'], []):
-            revenue.append((item.get('end'), item.get('val')))
-
-        ebit = []
-        for item in safe_get(['facts','us-gaap','OperatingIncomeLoss','units','USD'], []):
-            ebit.append((item.get('end'), item.get('val')))
-
-        operatingcashflow = []
-        for item in safe_get(
-            ['facts','us-gaap','NetCashProvidedByUsedInOperatingActivities','units','USD'],
-            []
-        ):
-            operatingcashflow.append((item.get('end'), item.get('val')))
-
-        debt = []
-        for item in safe_get(['facts','us-gaap','LongTermDebt','units','USD'], []):
-            debt.append((item.get('end'), item.get('val')))
-
-        return {
-            "assets": assets,
-            "liabilities": liabilities,
-            "cash": cash,
-            "shares": shares,
-            "net_income": net_income,
-            "revenue": revenue,
-            "ebit": ebit,
-            "operating_cash_flow": operatingcashflow,
-            "long_term_debt": debt,
-        }
-
-    def get_edgar(self, cik):
-        """Fetches the EDGAR company facts JSON for a given CIK. Data time period varies among companies"""
-        COMPANYFACTS_URL_TMPL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
-        headers = {"User-Agent": "leo@gmail.com", "Accept-Encoding": "gzip, deflate"}
-        url = COMPANYFACTS_URL_TMPL.format(cik=cik)
-        r = requests.get(url, headers=headers, timeout=30)
-        r.raise_for_status()
-        return r.json()
-    
-    def json_to_df(self, edgar_json: dict) -> pd.DataFrame:
-    
-        rows = []
-
-        for ticker, metrics in edgar_json.items():
-            row = {"ticker": ticker}
-            row["CIK"] =metrics.get("CIK", "")
-
-            # helper: parse list of (end, val) safely
-            def _sorted_vals(key):
-                vals = metrics.get(key, [])
-                # keep only pairs with end and val
-                vals = [(d, v) for d, v in vals if d is not None and v is not None]
-                return sorted(vals, key=lambda x: x[0])
-
-            # helper: record_date = latest end date across selected keys
-            record_dates = []
-            for key in ["assets", "liabilities", "cash", "shares", "long_term_debt",
-                        "revenue", "net_income", "ebit", "operating_cash_flow"]:
-                vals = _sorted_vals(key)
-                if vals:
-                    record_dates.append(vals[-1][0])
-            row["record_date"] = max(record_dates) if record_dates else np.nan
-
-            # ---- STOCK METRICS: take latest ----
-            for key in ["assets", "liabilities", "cash", "shares", "long_term_debt"]:
-                vals = _sorted_vals(key)
-                row[key] = vals[-1][1] if vals else np.nan
-
-            # ---- FLOW METRICS: TTM if possible else latest ----
-            for key in ["revenue", "net_income", "ebit", "operating_cash_flow"]:
-                vals = _sorted_vals(key)
-                if len(vals) >= 4:
-                    row[key] = sum(v for _, v in vals[-4:])
-                elif vals:
-                    row[key] = vals[-1][1]
-                else:
-                    row[key] = np.nan
-
-            # ---- YoY comparisons for 3 important flow metrics ----
-            # Simple: compare latest value vs a value ~1 year earlier (within a tolerance window)
-            def _yoy(key):
-                vals = _sorted_vals(key)
-                if len(vals) < 2:
-                    return np.nan
-
-                # convert date strings to pandas datetime for comparisons
-                dfv = pd.DataFrame(vals, columns=["end", "val"])
-                dfv["end"] = pd.to_datetime(dfv["end"], errors="coerce")
-                dfv["val"] = pd.to_numeric(dfv["val"], errors="coerce")
-                dfv = dfv.dropna(subset=["end", "val"]).sort_values("end")
-                if len(dfv) < 2:
-                    return np.nan
-
-                latest_end = dfv["end"].iloc[-1]
-                latest_val = dfv["val"].iloc[-1]
-
-                # target ~1 year before
-                target = latest_end - pd.Timedelta(days=365)
-                dfv["diff_days"] = (dfv["end"] - target).abs().dt.days
-
-                # pick closest within a loose window (handles annual-only or irregular reporting)
-                candidate = dfv.iloc[:-1].sort_values("diff_days").head(1)
-                if candidate.empty:
-                    return np.nan
-                if candidate["diff_days"].iloc[0] > 430:  # too far away
-                    return np.nan
-
-                prev_val = candidate["val"].iloc[0]
-                if prev_val == 0 or not np.isfinite(prev_val) or not np.isfinite(latest_val):
-                    return np.nan
-
-                return (latest_val - prev_val) / abs(prev_val)
-
-            row["assets_yoy"] = _yoy("assets")
-            row["net_income_yoy"] = _yoy("net_income")
-            row["operating_cash_flow_yoy"] = _yoy("operating_cash_flow")
-
-            rows.append(row)
-
-        return pd.DataFrame(rows)
-
-    def get_fundamentals(self, tickers):
-        SEC_TICKER_MAP_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
-        headers = {"User-Agent": "leo@gmail.com", "Accept-Encoding": "gzip, deflate"}    
-        CIK= self._get_json(SEC_TICKER_MAP_URL, headers)
-        out = {}
-        print(f"Processing {len(tickers)} CIK data...")
-        CIK_data = CIK['data']
-        counter = 1
-        for item in CIK_data:
-            
-            if item[2].upper() in tickers:
-                CIK_code = str(item[0]).zfill(10) 
+    def get_best_metric(self, facts, category):
+        """Tries multiple XBRL tags for a category and returns the best list of data."""
+        for tag in self.TAG_MAP[category]:
+            # Check us-gaap first, then dei
+            for taxonomy in ['us-gaap', 'dei']:
                 try:
-                    data = self.get_edgar(CIK_code)
-                except (requests.RequestException) as e:
-                    print(f"Error fetching data for CIK {CIK_code} ({item[2].upper()}): {e}")
-                    counter+=1
+                    data = facts['facts'][taxonomy][tag]['units']
+                    unit = 'USD' if 'USD' in data else 'shares'
+                    return data[unit]
+                except KeyError:
                     continue
-                extracted = self.extract_data(data)
-                extracted["CIK"] = CIK_code
-                out[item[2].upper()] = extracted
+        return []
 
-                
-                print(f"Processed {len(out)+counter} / {len(tickers)}")
+    def process_facts(self, ticker, facts):
+        out = {"ticker": ticker, "CIK": facts.get("cik", "")}
         
+        for category in self.TAG_MAP.keys():
+            data = self.get_best_metric(facts, category)
+            if not data:
+                out[category] = np.nan
+                continue
 
-        return self.json_to_df(out)
+            # Convert to DataFrame to handle dates and periods
+            df_m = pd.DataFrame(data)
+            df_m['end'] = pd.to_datetime(df_m['end'])
+            
+            # For Balance Sheet items (Instant): Take the latest
+            if category in ["assets", "liabilities", "cash", "long_term_debt", "shares"]:
+                latest = df_m.sort_values('end').iloc[-1]
+                out[category] = latest['val']
+                out[f"{category}_date"] = latest['end']
+            
+            # For Income/Cash Flow (Duration): Find TTM
+            else:
+                # Filter for 12-month periods (approx 365 days)
+                if 'start' in df_m.columns:
+                    df_m['start'] = pd.to_datetime(df_m['start'])
+                    df_m['duration'] = (df_m['end'] - df_m['start']).dt.days
+                    
+                    # Look for the most recent 12-month value
+                    ttm_data = df_m[(df_m['duration'] > 330) & (df_m['duration'] < 370)]
+                    if not ttm_data.empty:
+                        latest_ttm = ttm_data.sort_values('end').iloc[-1]
+                        out[category] = latest_ttm['val']
+                    else:
+                        # Fallback to latest available if no 12-month period found
+                        out[category] = df_m.sort_values('end').iloc[-1]['val']
+                else:
+                    out[category] = df_m.sort_values('end').iloc[-1]['val']
+        
+        return out
+
+    def get_fundamentals(self):
+        # 1. Get Ticker -> CIK mapping
+        mapping_url = "https://www.sec.gov/files/company_tickers_exchange.json"
+        mapping_data = self._get_json(mapping_url)
+        
+        # Convert mapping to searchable dict
+        ticker_to_cik = {}
+        for item in mapping_data['data']:
+            ticker_to_cik[item[2].upper()] = str(item[0]).zfill(10)
+
+        results = []
+        for i, ticker in enumerate(self.tickers):
+            cik = ticker_to_cik.get(ticker)
+            if not cik:
+                print(f"CIK not found for {ticker}")
+                continue
+            
+            try:
+                if i % 20 == 0:
+                    print(f"Fundamentals Retrieval {floor((i+1)/len(self.tickers)*100)}% complete")
+                facts_url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+                facts = self._get_json(facts_url)
+                processed = self.process_facts(ticker, facts)
+                results.append(processed)
+            except Exception as e:
+                print(f"Error processing {ticker}: {e}")
+        print(f"Fundamentals retrieval complete. {len(results)} / {len(self.tickers)} tickers processed successfully.")
+        return pd.DataFrame(results)
