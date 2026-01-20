@@ -13,7 +13,8 @@ look at twitter, reddit etc.
 look at whether the company is startup or trending up/down
 
 ## TO DO
-- compute metrics (P/E, EBITDA). use AI agent to scrape, then retrieve market cap (or price) to actually compute the metrics
+- compute metrics (P/E, EBITDA). use AI agent to scrape, then retrieve market cap (or price) to actually compute the metrics. 
+- ensure correctness by getting FORM TYPE IE QUARTERLY OR YEARLY
 
 #### Agents List
 - Footnotes extraction agent
