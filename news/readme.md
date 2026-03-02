@@ -14,3 +14,4 @@ Data sources
 - FNSPID (Github repo + Benzinga)
 - Benzinga
 - Kaggle stock news DB
+Tiingo / polygon (TIINGO SEEMS LIKE BEST)
