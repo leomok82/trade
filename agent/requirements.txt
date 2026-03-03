@@ -1,0 +1,17 @@
+# Core dependencies
+requests
+pandas
+numpy
+
+# LangChain and LLM dependencies
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-community>=0.0.20
+
+# DuckDuckGo search (free, no API key needed)
+duckduckgo-search
+
+# Jupyter notebook support (if needed)
+jupyter
+ipykernel
+matplotlib
